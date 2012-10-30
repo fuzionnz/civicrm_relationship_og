@@ -206,6 +206,10 @@ function _civicrm_relationship_og_populate_group($gid, $relationship_id, $contac
     'version' => 3,
     'relationship_type_id' => $relationship_id,
     'contact_id_b' => $contact_b,
+    'is_active' => 1,
+    'options' => array(
+      'limit' => 500,
+    ),
   ));
   if (!empty($results['is_error'])) {
     return FALSE;
