@@ -1,0 +1,7 @@
+name = Civicrm Relationship — OG Syncronization
+description = Syncronizes OG membership and civicrm relationships
+core = 7.x
+package = CiviCRM
+
+dependencies[] = civicrm
+dependencies[] = rules

@@ -1,0 +1,307 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function civicrm_relationship_og_menu() {
+  return array(
+    'admin/config/civicrm/relationship-og' => array(
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('civicrm_relationship_og_settings_form'),
+      'access callback' => TRUE,
+      'title' => 'Civicrm Relationship / OG Synchronization',
+    ),
+    'admin/config/civicrm/relationship-og/delete/%/%' => array(
+      'page callback' => '_civicrm_relationship_og_delete_mapping',
+      'page arguments' => array(5, 6),
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    ),
+    'admin/config/civicrm/relationship-og/contacts' => array(
+      'page callback' => '_civicrm_relationship_og_contacts_autocomplete',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    ),
+  );
+}
+
+/**
+ * Implements hook_civicrm_post().
+ */
+function civicrm_relationship_og_civicrm_post($op, $objectName, $objectId, &$objectRef) {
+  if ($objectName != 'Relationship') {
+    return;
+  }
+
+  $account = _civicrm_relationship_og_load_user($objectRef->contact_id_a);
+  $gids = db_query("SELECT gid FROM civicrm_relationship_og WHERE relationship_id = :relationship_id AND contact_b = :contact_b", array(':relationship_id' => $objectRef->relationship_type_id, ':contact_b' => $objectRef->contact_id_b))->fetchCol();
+
+  switch ($op) {
+    case $op == 'create':
+      foreach ($gids as $gid) {
+        og_group($gid, array('entity' => $account));
+      }
+      break;
+    case $op == 'delete' && $objectName == 'Relationship':
+      foreach ($gids as $gid) {
+        og_ungroup($gid, 'user', $account);
+      }
+      break;
+  }
+}
+
+/**
+ * Page callbacks and form helpers
+ */
+
+function civicrm_relationship_og_settings_form($form, &$form_state) {
+  $relationships = _civicrm_relationship_og_get_relationships();
+  $groups = _civicrm_relationship_og_get_ogs();
+
+  $form = array();
+  $form['new'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Create new mapping',
+    '#collapsible' => TRUE,
+    'new_form' => array(
+      'relationship' => array(
+        '#type' => 'select',
+        '#title' => 'Civicrm relationship',
+        '#options' => $relationships,
+        '#required' => TRUE,
+      ),
+      'group' => array(
+        '#type' => 'select',
+        '#title' => 'Organic group',
+        '#options' => $groups,
+        '#required' => TRUE,
+      ),
+      'contact_b' => array(
+        '#type' => 'textfield',
+        '#title' => 'Contact B',
+        '#autocomplete_path' => 'admin/config/civicrm/relationship-og/contacts',
+        '#required' => TRUE,
+      ),
+      'submit' => array(
+        '#type' => 'submit',
+        '#value' => 'Save',
+      ),
+    ),
+  );
+
+  $results = db_query("SELECT gid, relationship_id, contact_b FROM {civicrm_relationship_og}")->fetchAll();
+  $header = array('Organic Group', 'Civicrm Relationship', 'Contact B', 'Delete');
+  $rows = array();
+
+  if (!empty($results)) {
+    // If there at least one result, default to a collapsed form
+    $form['new']['#collapsed'] = TRUE;
+
+    foreach ($results as $result) {
+      $contact_name = '';
+      if ($contact = _civicrm_relationship_og_get_contact($result->contact_b)) {
+        $contact_name = $contact['display_name'];
+      }
+
+      $rows[] = array(
+        "{$groups[$result->gid]} [id:{$result->gid}]",
+        "{$relationships[$result->relationship_id]} [id:{$result->relationship_id}]",
+        "$contact_name [id:{$result->contact_b}]",
+        l('delete', "admin/config/civicrm/relationship-og/delete/{$result->gid}/{$result->relationship_id}"),
+      );
+    }
+  }
+  else {
+    $rows[] = array(
+      array('data' => "No mappings yet exist.", 'colspan' => 4)
+    );
+  }
+  $form['mappings'] = array(
+    '#type' => 'markup',
+    '#theme' => 'table',
+    '#header' => $header,
+    '#rows' => $rows,
+  );
+
+  return $form;
+}
+
+function civicrm_relationship_og_settings_form_validate($form, &$form_state) {
+  // Try to extract contact_b id
+  $contact_b = $form_state['values']['contact_b'];
+  $matches = array();
+  preg_match('/.*\[id:(\d+)\]/', $contact_b, $matches);
+
+  if (empty($matches[1])) {
+    form_set_error('contact_b', "Contact b must be in the form of 'John Smith [id:1234]'");
+  }
+  else {
+    form_set_value($form['new']['new_form']['contact_b'], $matches[1], $form_state);
+  }
+
+  // Allow only one mapping per organic group
+  $gid = $form_state['values']['group'];
+  if (db_query("SELECT COUNT(*) FROM civicrm_relationship_og WHERE gid = :gid", array(':gid' => $gid))->fetchField()) {
+    $groups = _civicrm_relationship_og_get_ogs(array($gid));
+    form_set_error('group', "The organic group \"{$groups[$gid]}\" has already been assigned a mapping.");
+  }
+}
+
+function civicrm_relationship_og_settings_form_submit($form, &$form_state) {
+  $record = array(
+    'gid' => (int) $form_state['values']['group'],
+    'relationship_id' => (int) $form_state['values']['relationship'],
+    'contact_b' => (int) $form_state['values']['contact_b'],
+  );
+  try {
+    drupal_write_record('civicrm_relationship_og', $record);
+    _civicrm_relationship_og_populate_group($record['gid'], $record['relationship_id'], $record['contact_b']);
+  }
+  catch (PDOException $e) {
+    # Do nothing.
+  }
+}
+
+function _civicrm_relationship_og_delete_mapping($gid, $relationship_id) {
+  $query = db_delete('civicrm_relationship_og')
+    ->condition('gid', $gid)
+    ->condition('relationship_id', $relationship_id)
+    ->execute();
+
+  drupal_goto('admin/config/civicrm/relationship-og');
+}
+
+function _civicrm_relationship_og_contacts_autocomplete($string) {
+  if (!civicrm_initialize()) {
+    drupal_exit();
+  }
+
+  $result = civicrm_api('contact', 'get', array(
+    'version' => 3,
+    'display_name' => "%{$string}%",
+  ));
+
+  if (!empty($result['is_error'])) {
+    drupal_exit();
+  }
+
+  $contacts = array();
+  foreach ($result['values'] as $value) {
+    $name = "{$value['display_name']} [id:{$value['id']}]";
+    $contacts[$name] = check_plain($name);
+  }
+
+  drupal_json_output($contacts);
+}
+
+/**
+ * Populate an Organic group with all users who fulfil a particular relationship
+ */
+function _civicrm_relationship_og_populate_group($gid, $relationship_id, $contact_b) {
+  if (!civicrm_initialize()) {
+    return FALSE;
+  }
+
+  $results = civicrm_api('relationship', 'get', array(
+    'version' => 3,
+    'relationship_type_id' => $relationship_id,
+    'contact_id_b' => $contact_b,
+  ));
+  if (!empty($results['is_error'])) {
+    return FALSE;
+  }
+
+  // Extract contact id array from relationship query
+  $contacts = array();
+  foreach ($results['values'] as $relationship) {
+    $contacts[$relationship['contact_id_a']] = $relationship['contact_id_a'];
+  }
+
+  // Add contacts with Drupal accounts to OG
+  foreach ($contacts as $contact) {
+    $account = _civicrm_relationship_og_load_user($contact);
+    if ($account) {
+      og_group($gid, array('entity' => $account));
+    }
+  }
+}
+
+/**
+ * Helper functions
+ */
+
+function _civicrm_relationship_og_load_user($contact_id) {
+  if (!civicrm_initialize()) {
+    return FALSE;
+  }
+
+  // Get current domain
+  $domain = civicrm_api('domain', 'getsingle', array(
+    'version' => 3,
+    'current_domain' => 1,
+  ));
+  if (!empty($domain['is_error'])) {
+    return FALSE;
+  }
+
+  $uf_match = civicrm_api('uf_match', 'getsingle', array(
+    'version' => 3,
+    'contact_id' => $contact_id,
+    'domain_id' => $domain['id'],
+  ));
+  if (!empty($uf_match['is_error'])) {
+    return FALSE;
+  }
+
+  return user_load($uf_match['uf_id']);
+}
+
+function _civicrm_relationship_og_get_relationships($relationship_ids = array()) {
+  if (!civicrm_initialize()) {
+    return array();
+  }
+
+  $relationships = civicrm_api('relationship_type', 'get', array(
+    'version' => 3,
+    'id' => $relationship_ids,
+  ));
+  if (!empty($relationships['is_error'])) {
+    return array();
+  }
+
+  $options = array();
+  foreach ($relationships['values'] as $relationship) {
+    $options[$relationship['id']] = $relationship['label_a_b'] . " | " . $relationship['label_b_a'];
+  }
+  return $options;
+}
+
+function _civicrm_relationship_og_get_ogs($gids = array()) {
+  if (empty($gids)) {
+    $gids = og_get_all_group();
+  }
+  $groups = og_load_multiple($gids);
+  
+  $options = array();
+  foreach ($groups as $group) {
+    $options[$group->gid] = $group->label;
+  }
+  return $options;
+}
+
+function _civicrm_relationship_og_get_contact($contact_id) {
+  if (!civicrm_initialize()) {
+    return FALSE;
+  }
+
+  $result = civicrm_api('contact', 'getsingle', array(
+    'version' => 3,
+    'id' => $contact_id,
+  ));
+
+  if (!empty($result['is_error'])) {
+    return FALSE;
+  }
+
+  return $result;
+}

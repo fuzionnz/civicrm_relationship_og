@@ -1,0 +1,53 @@
+<?php
+
+function civicrm_relationship_og_schema() {
+  return array(
+    'civicrm_relationship_og' => array(
+      'fields' => array(
+        'gid' => array(
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'relationship_id' => array(
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ),
+        'contact_b' => array(
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'initial' => 0,
+        ),
+      ),
+      'unique keys' => array(
+        'gid_relationship_contact' => array('gid', 'relationship_id', 'contact_b'),
+      ),
+    ),
+  );
+}
+
+/**
+ * Install settings table.
+ */
+function civicrm_relationship_og_update_7001() {
+  drupal_install_schema('civicrm_relationship_og');
+}
+
+/**
+ * Add contact_b column.
+ */
+function civicrm_relationship_og_update_7002() {
+  db_drop_index('civicrm_relationship_og', 'gid_relationship');
+
+  $schema = civicrm_relationship_og_schema();
+  db_add_field(
+    'civicrm_relationship_og',
+    'contact_b',
+    $schema['civicrm_relationship_og']['fields']['contact_b'],
+    $schema['civicrm_relationship_og']
+  );
+
+  cache_clear_all();
+}
