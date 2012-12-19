@@ -36,6 +36,10 @@ function civicrm_relationship_og_civicrm_post($op, $objectName, $objectId, &$obj
   $account = _civicrm_relationship_og_load_user($objectRef->contact_id_a);
   $gids = db_query("SELECT gid FROM civicrm_relationship_og WHERE relationship_id = :relationship_id AND contact_b = :contact_b", array(':relationship_id' => $objectRef->relationship_type_id, ':contact_b' => $objectRef->contact_id_b))->fetchCol();
 
+  if (empty($account) || empty($gids)) {
+    return;
+  }
+
   switch ($op) {
     case $op == 'create':
       foreach ($gids as $gid) {
