@@ -33,20 +33,63 @@ function civicrm_relationship_og_civicrm_post($op, $objectName, $objectId, &$obj
     return;
   }
 
-  $account = _civicrm_relationship_og_load_user($objectRef->contact_id_a);
-  $gids = db_query("SELECT gid FROM civicrm_relationship_og WHERE relationship_id = :relationship_id AND contact_b = :contact_b", array(':relationship_id' => $objectRef->relationship_type_id, ':contact_b' => $objectRef->contact_id_b))->fetchCol();
+  // If the relationship has been enabled or disabled, we treat that the same
+  // as if it were created or deleted.
+  switch (TRUE) {
+    case $op == 'create' && $objectRef->is_active:
+    case $op == 'edit' && $objectRef->is_active:
+      _civicrm_relationship_og_toggle('add', $objectRef->contact_id_a, $objectRef->contact_id_b, $objectRef->relationship_type_id);
+      break;
+    case $op == 'delete':
+    case $op == 'edit' && !$objectRef->is_active:
+      _civicrm_relationship_og_toggle('remove', $objectRef->contact_id_a, $objectRef->contact_id_b, $objectRef->relationship_type_id);
+      break;
+  }
+}
+
+/**
+ * Implements hook_civicrm_enableDisable().
+ *
+ * This hook is called when the relationship is enabled or disabled.
+ */
+function civicrm_relationship_og_civicrm_enableDisable($recordBAO, $recordId, $isActive, &$objectRef) {
+  if ($recordBAO != 'CRM_Contact_BAO_Relationship' || !civicrm_initialize()) {
+    return;
+  }
+
+  $relationship = civicrm_api('relationship', 'getSingle', array(
+    'version' => 3,
+    'id' => $recordId,
+  ));
+  if (!empty($relationship['is_error'])) {
+    return;
+  }
+
+  $toggle = $isActive ? 'add' : 'remove';
+  _civicrm_relationship_og_toggle($toggle, $relationship['contact_id_a'], $relationship['contact_id_b'], $relationship['relationship_type_id']);
+}
+
+/**
+ * The workhorse function which is called by the above hooks and, if appropriate, adds or
+ * removes Drupal users to a mapped organic group.
+ */
+function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, $relationship_type_id) {
+  // Attempt to load the Drupal account of contact a of the relationship and any
+  // mapped Organic Groups for this particular relationship/contact_b pair.
+  $account = _civicrm_relationship_og_load_user($contact_id_a);
+  $gids = db_query("SELECT gid FROM civicrm_relationship_og WHERE relationship_id = :relationship_id AND contact_b = :contact_b", array(':relationship_id' => $relationship_type_id, ':contact_b' => $contact_id_b))->fetchCol();
 
   if (empty($account) || empty($gids)) {
     return;
   }
 
-  switch ($op) {
-    case $op == 'create':
+  switch ($toggle) {
+    case 'add':
       foreach ($gids as $gid) {
         og_group($gid, array('entity' => $account));
       }
       break;
-    case $op == 'delete' && $objectName == 'Relationship':
+    case 'remove':
       foreach ($gids as $gid) {
         og_ungroup($gid, 'user', $account);
       }
