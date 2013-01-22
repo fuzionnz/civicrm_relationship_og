@@ -2,7 +2,7 @@
 
 function civicrm_relationship_og_schema() {
   return array(
-    'civicrm_relationship_og' => array(
+    'og_civicrm_relationship' => array(
       'fields' => array(
         'gid' => array(
           'type' => 'int',
@@ -50,4 +50,22 @@ function civicrm_relationship_og_update_7002() {
   );
 
   cache_clear_all();
+}
+
+/**
+ * Change table name so that we avoid trigger conflicts with civicrm.
+ */
+function civicrm_relationship_og_update_7003() {
+  db_rename_table('civicrm_relationship_og', 'og_civicrm_relationship');
+
+  cache_clear_all();
+}
+
+/**
+ * Cleanup any stray triggers that were erroniously added by civicrm.
+ */
+function civicrm_relationship_og_update_7004() {
+  db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_insert");
+  db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_update");
+  db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_delete");
 }
