@@ -86,12 +86,12 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
   switch ($toggle) {
     case 'add':
       foreach ($gids as $gid) {
-        og_group($gid, array('entity' => $account));
+        og_group('node', $gid, array('entity' => $account));
       }
       break;
     case 'remove':
       foreach ($gids as $gid) {
-        og_ungroup($gid, 'user', $account);
+        og_ungroup('node', $gid, 'user', $account->uid);
       }
       break;
   }
@@ -119,7 +119,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       ),
       'group' => array(
         '#type' => 'select',
-        '#title' => 'Organic group',
+        '#title' => 'Group node',
         '#options' => $groups,
         '#required' => TRUE,
       ),
@@ -272,7 +272,7 @@ function _civicrm_relationship_og_populate_group($gid, $relationship_id, $contac
   foreach ($contacts as $contact) {
     $account = _civicrm_relationship_og_load_user($contact);
     if ($account) {
-      og_group($gid, array('entity' => $account));
+      og_group('node', $gid, array('entity' => $account));
     }
   }
 }
@@ -327,15 +327,15 @@ function _civicrm_relationship_og_get_relationships($relationship_ids = array())
   return $options;
 }
 
-function _civicrm_relationship_og_get_ogs($gids = array()) {
-  if (empty($gids)) {
-    $gids = og_get_all_group();
+function _civicrm_relationship_og_get_ogs($nids = array()) {
+  if (empty($nids)) {
+    $nids = og_get_all_group();
   }
-  $groups = og_load_multiple($gids);
+  $nodes = node_load_multiple($nids);
   
   $options = array();
-  foreach ($groups as $group) {
-    $options[$group->gid] = $group->label;
+  foreach ($nodes as $node) {
+    $options[$node->nid] = $node->title;
   }
   return $options;
 }
