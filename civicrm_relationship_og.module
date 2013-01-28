@@ -119,7 +119,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       ),
       'group' => array(
         '#type' => 'select',
-        '#title' => 'Group node',
+        '#title' => 'Oragnic group',
         '#options' => $groups,
         '#required' => TRUE,
       ),
@@ -151,7 +151,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       }
 
       $rows[] = array(
-        "{$groups[$result->gid]} [id:{$result->gid}]",
+        l("{$groups[$result->gid]}", "node/{$result->gid}") . " [nid:{$result->gid}]",
         "{$relationships[$result->relationship_id]} [id:{$result->relationship_id}]",
         "$contact_name [id:{$result->contact_b}]",
         l('delete', "admin/config/civicrm/relationship-og/delete/{$result->gid}/{$result->relationship_id}"),
