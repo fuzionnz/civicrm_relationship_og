@@ -315,6 +315,9 @@ function _civicrm_relationship_og_get_relationships($relationship_ids = array())
   $relationships = civicrm_api('relationship_type', 'get', array(
     'version' => 3,
     'id' => $relationship_ids,
+    'options' => array(
+      'limit' => 500,
+    ),
   ));
   if (!empty($relationships['is_error'])) {
     return array();
