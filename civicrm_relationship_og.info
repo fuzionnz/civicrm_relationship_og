@@ -4,4 +4,4 @@ core = 7.x
 package = CiviCRM
 
 dependencies[] = civicrm
-dependencies[] = rules
+dependencies[] = og
