@@ -8,18 +8,18 @@ function civicrm_relationship_og_menu() {
     'admin/config/civicrm/relationship-og' => array(
       'page callback' => 'drupal_get_form',
       'page arguments' => array('civicrm_relationship_og_settings_form'),
-      'access callback' => TRUE,
+      'access arguments' => array('administer group'),
       'title' => 'Civicrm Relationship / OG Synchronization',
     ),
     'admin/config/civicrm/relationship-og/delete/%/%' => array(
       'page callback' => '_civicrm_relationship_og_delete_mapping',
       'page arguments' => array(5, 6),
-      'access callback' => TRUE,
+      'access arguments' => array('administer group'),
       'type' => MENU_CALLBACK,
     ),
     'admin/config/civicrm/relationship-og/contacts' => array(
       'page callback' => '_civicrm_relationship_og_contacts_autocomplete',
-      'access callback' => TRUE,
+      'access arguments' => array('administer group'),
       'type' => MENU_CALLBACK,
     ),
   );
