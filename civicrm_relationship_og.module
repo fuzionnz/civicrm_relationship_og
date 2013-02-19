@@ -11,9 +11,9 @@ function civicrm_relationship_og_menu() {
       'access arguments' => array('administer group'),
       'title' => 'Civicrm Relationship / OG Synchronization',
     ),
-    'admin/config/civicrm/relationship-og/delete/%/%' => array(
+    'admin/config/civicrm/relationship-og/delete/%' => array(
       'page callback' => '_civicrm_relationship_og_delete_mapping',
-      'page arguments' => array(5, 6),
+      'page arguments' => array(5),
       'access arguments' => array('administer group'),
       'type' => MENU_CALLBACK,
     ),
@@ -153,8 +153,8 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       $rows[] = array(
         l("{$groups[$result->gid]}", "node/{$result->gid}") . " [nid:{$result->gid}]",
         "{$relationships[$result->relationship_id]} [id:{$result->relationship_id}]",
-        "$contact_name [id:{$result->contact_b}]",
-        l('delete', "admin/config/civicrm/relationship-og/delete/{$result->gid}/{$result->relationship_id}"),
+        "$contact_name" . (empty($result->contact_b) ? '*' : " [id:{$result->contact_b}]"),
+        l('delete', "admin/config/civicrm/relationship-og/delete/{$result->gid}"),
       );
     }
   }
@@ -209,10 +209,9 @@ function civicrm_relationship_og_settings_form_submit($form, &$form_state) {
   }
 }
 
-function _civicrm_relationship_og_delete_mapping($gid, $relationship_id) {
+function _civicrm_relationship_og_delete_mapping($gid) {
   $query = db_delete('og_civicrm_relationship')
     ->condition('gid', $gid)
-    ->condition('relationship_id', $relationship_id)
     ->execute();
 
   drupal_goto('admin/config/civicrm/relationship-og');
