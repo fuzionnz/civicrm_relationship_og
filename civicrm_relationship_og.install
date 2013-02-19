@@ -17,8 +17,7 @@ function civicrm_relationship_og_schema() {
         'contact_b' => array(
           'type' => 'int',
           'unsigned' => TRUE,
-          'not null' => TRUE,
-          'initial' => 0,
+          'not null' => FALSE,
         ),
       ),
       'unique keys' => array(
@@ -68,4 +67,16 @@ function civicrm_relationship_og_update_7004() {
   db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_insert");
   db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_update");
   db_query("DROP TRIGGER IF EXISTS civicrm_relationship_og_after_delete");
+}
+
+/**
+ * Allow contact_b column to be NULL.
+ */
+function civicrm_relationship_og_update_7005() {
+  db_drop_unique_key('og_civicrm_relationship', 'gid_relationship_contact');
+  db_change_field('og_civicrm_relationship', 'contact_b', 'contact_b', array(
+    'type' => 'int',
+    'unsigned' => TRUE,
+    'not null' => FALSE,
+  ), array('unique keys' => array('gid_relationship_contact' => array('gid', 'relationship_id', 'contact_b'))));
 }
