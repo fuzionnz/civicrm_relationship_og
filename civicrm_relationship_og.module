@@ -119,7 +119,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       ),
       'group' => array(
         '#type' => 'select',
-        '#title' => 'Oragnic group',
+        '#title' => 'Organic group',
         '#options' => $groups,
         '#required' => TRUE,
       ),
