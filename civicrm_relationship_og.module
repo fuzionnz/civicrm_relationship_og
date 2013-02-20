@@ -52,7 +52,7 @@ function civicrm_relationship_og_civicrm_post($op, $objectName, $objectId, &$obj
  *
  * This hook is called when the relationship is enabled or disabled.
  */
-function civicrm_relationship_og_civicrm_enableDisable($recordBAO, $recordId, $isActive, &$objectRef) {
+function civicrm_relationship_og_civicrm_enableDisable($recordBAO, $recordId, $isActive) {
   if ($recordBAO != 'CRM_Contact_BAO_Relationship' || !civicrm_initialize()) {
     return;
   }
