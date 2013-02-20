@@ -197,17 +197,20 @@ function civicrm_relationship_og_settings_form_validate($form, &$form_state) {
 }
 
 function civicrm_relationship_og_settings_form_submit($form, &$form_state) {
-  // If contact_b is empty, we want to insert a NULL value into the field.
-  $contact_b = empty($form_state['values']['contact_b']) ? NULL : (int) $form_state['values']['contact_b'];
-
   $record = array(
     'gid' => (int) $form_state['values']['group'],
     'relationship_id' => (int) $form_state['values']['relationship'],
-    'contact_b' => $contact_b,
   );
+
+  // If contact_b is empty, omit it so that we default to a NULL record in the database field.
+  $contact_b = (int) $form_state['values']['contact_b'];
+  if (!empty($contact_b)) {
+    $record['contact_b'] = $contact_b;
+  }
+
   try {
     drupal_write_record('og_civicrm_relationship', $record);
-    _civicrm_relationship_og_populate_group($record['gid'], $record['relationship_id'], $record['contact_b']);
+    _civicrm_relationship_og_populate_group($record['gid'], $record['relationship_id'], $contact_b);
   }
   catch (PDOException $e) {
     # Do nothing.
