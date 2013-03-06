@@ -77,12 +77,21 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
   // Attempt to load the Drupal account of contact a of the relationship and any
   // mapped Organic Groups for this particular relationship/contact_b pair.
   $account = _civicrm_relationship_og_load_user($contact_id_a);
-  $gids = db_query("SELECT gid FROM {og_civicrm_relationship} WHERE relationship_id = :relationship_id AND (contact_b = :contact_b OR contact_b IS NULL)", array(':relationship_id' => $relationship_type_id, ':contact_b' => $contact_id_b))->fetchCol();
+
+  // Search to see if the relationship/contact_b pairing matches any active mappings.
+  $gids = db_query("
+    SELECT gid FROM {og_civicrm_relationship}
+    WHERE relationship_id = :relationship_id
+    AND (contact_b = :contact_b OR contact_b IS NULL)
+    GROUP BY gid
+  ", array(':relationship_id' => $relationship_type_id, ':contact_b' => $contact_id_b))->fetchCol();
 
   if (empty($account) || empty($gids)) {
     return;
   }
 
+  // We've got at least one active mapping. We either add user to the Organic Group
+  // or check to see if they can be removed.
   switch ($toggle) {
     case 'add':
       foreach ($gids as $gid) {
@@ -91,7 +100,47 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
       break;
     case 'remove':
       foreach ($gids as $gid) {
-        og_ungroup('node', $gid, 'user', $account->uid);
+        // We don't want to remove OG membership if there are other active mappings
+        // keeping a user in an OG. So we'll run an exhaustive search.
+
+        // First get all current civicrm relationships of the user.
+        // This *should* exclude the relationship that has just been deleted/disabled.
+        if ($relationships = _civicrm_relationship_og_get_relationships($contact_id_a) == FALSE) {
+          // Civicrm error. Should probably log to watchdog.
+          break;
+        }
+
+        if (!empty($relationships)) {
+          // Now we want to search the table for any mappings.
+          $query = db_select('og_civicrm_relationship', 'ogr')
+            ->fields('ogr', array('gid'))
+            ->condition('ogr.gid', (int) $gid);
+
+          $db_or = db_or();
+          foreach ($relationships as $relationship) {
+            // We're after something like:
+            // OR (relationship_id = 1 AND (contact_b = 3 OR contact_b IS NULL)) OR...
+            $contact_b_cond = db_or()
+              ->condition('ogr.contact_b', (int) $relationship['contact_id_b'])
+              ->isNull('ogr.contact_b');
+
+            $mapping_cond = db_and()
+              ->condition($contact_b_cond)
+              ->condition('ogr.relationship_id', (int) $relationship['relationship_type_id']);
+
+            // No append the condition to our OR chain.
+            $db_or->condition($mapping_cond);
+          }
+
+          $count = $query->condition($db_or)
+            ->countQuery()
+            ->execute()
+            ->fetchField();
+        }
+
+        if (empty($relationships) || $count == 0) {
+          og_ungroup('node', $gid, 'user', $account->uid);
+        }
       }
       break;
   }
@@ -102,7 +151,7 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
  */
 
 function civicrm_relationship_og_settings_form($form, &$form_state) {
-  $relationships = _civicrm_relationship_og_get_relationships();
+  $relationship_types = _civicrm_relationship_og_get_relationship_types();
   $groups = _civicrm_relationship_og_get_ogs();
 
   $form = array();
@@ -114,7 +163,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
       'relationship' => array(
         '#type' => 'select',
         '#title' => 'Civicrm relationship',
-        '#options' => $relationships,
+        '#options' => $relationship_types,
         '#required' => TRUE,
       ),
       'group' => array(
@@ -136,7 +185,7 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
     ),
   );
 
-  $results = db_query("SELECT gid, relationship_id, contact_b FROM {og_civicrm_relationship}")->fetchAll();
+  $results = db_query("SELECT id, gid, relationship_id, contact_b FROM {og_civicrm_relationship}")->fetchAll();
   $header = array('Organic Group', 'Civicrm Relationship', 'Contact B', 'Delete');
   $rows = array();
 
@@ -152,9 +201,9 @@ function civicrm_relationship_og_settings_form($form, &$form_state) {
 
       $rows[] = array(
         l("{$groups[$result->gid]}", "node/{$result->gid}") . " [nid:{$result->gid}]",
-        "{$relationships[$result->relationship_id]} [id:{$result->relationship_id}]",
+        "{$relationship_types[$result->relationship_id]} [id:{$result->relationship_id}]",
         "$contact_name" . (empty($result->contact_b) ? '*' : " [id:{$result->contact_b}]"),
-        l('delete', "admin/config/civicrm/relationship-og/delete/{$result->gid}"),
+        l('delete', "admin/config/civicrm/relationship-og/delete/{$result->id}"),
       );
     }
   }
@@ -187,13 +236,6 @@ function civicrm_relationship_og_settings_form_validate($form, &$form_state) {
       form_set_value($form['new']['new_form']['contact_b'], $matches[1], $form_state);
     }
   }
-
-  // Allow only one mapping per organic group
-  $gid = $form_state['values']['group'];
-  if (db_query("SELECT COUNT(*) FROM {og_civicrm_relationship} WHERE gid = :gid", array(':gid' => $gid))->fetchField()) {
-    $groups = _civicrm_relationship_og_get_ogs(array($gid));
-    form_set_error('group', "The organic group \"{$groups[$gid]}\" has already been assigned a mapping.");
-  }
 }
 
 function civicrm_relationship_og_settings_form_submit($form, &$form_state) {
@@ -217,9 +259,9 @@ function civicrm_relationship_og_settings_form_submit($form, &$form_state) {
   }
 }
 
-function _civicrm_relationship_og_delete_mapping($gid) {
+function _civicrm_relationship_og_delete_mapping($id) {
   $query = db_delete('og_civicrm_relationship')
-    ->condition('gid', $gid)
+    ->condition('id', $id)
     ->execute();
 
   drupal_goto('admin/config/civicrm/relationship-og');
@@ -318,26 +360,25 @@ function _civicrm_relationship_og_load_user($contact_id) {
   return user_load($uf_match['uf_id']);
 }
 
-function _civicrm_relationship_og_get_relationships($relationship_ids = array()) {
+function _civicrm_relationship_og_get_relationship_types() {
   if (!civicrm_initialize()) {
     return array();
   }
 
-  $relationships = civicrm_api('relationship_type', 'get', array(
+  $relationship_types = civicrm_api('relationship_type', 'get', array(
     'version' => 3,
-    'id' => $relationship_ids,
     'is_active' => 1,
     'options' => array(
       'limit' => 500,
     ),
   ));
-  if (!empty($relationships['is_error'])) {
+  if (!empty($relationship_types['is_error'])) {
     return array();
   }
 
   $options = array();
-  foreach ($relationships['values'] as $relationship) {
-    $options[$relationship['id']] = $relationship['label_a_b'] . " | " . $relationship['label_b_a'];
+  foreach ($relationship_types['values'] as $relationship_type) {
+    $options[$relationship_type['id']] = $relationship_type['label_a_b'] . " | " . $relationship_type['label_b_a'];
   }
   return $options;
 }
@@ -370,4 +411,22 @@ function _civicrm_relationship_og_get_contact($contact_id) {
   }
 
   return $result;
+}
+
+function _civicrm_relationship_og_get_relationships($contact_id) {
+  if (!civicrm_initialize()) {
+    return FALSE;
+  }
+
+  $result = civicrm_api('relationship', 'get', array(
+    'version' => 3,
+    'contact_id_a' => $contact_id,
+    'is_active' => 1,
+  ));
+
+  if (!empty($result['is_error'])) {
+    return FALSE;
+  }
+
+  return $result['values'];
 }
