@@ -105,7 +105,7 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
 
         // First get all current civicrm relationships of the user.
         // This *should* exclude the relationship that has just been deleted/disabled.
-        if ($relationships = _civicrm_relationship_og_get_relationships($contact_id_a) == FALSE) {
+        if (($relationships = _civicrm_relationship_og_get_relationships($contact_id_a)) === FALSE) {
           // Civicrm error. Should probably log to watchdog.
           break;
         }
