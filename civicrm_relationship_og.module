@@ -147,6 +147,74 @@ function _civicrm_relationship_og_toggle($toggle, $contact_id_a, $contact_id_b, 
 }
 
 /**
+ * Implements hook_cron().
+ *
+ * In a civicrm multisite setup, another Drupal frontend may update relationships, eg. as part
+ * of a scheduled job. This means the above hooks won't be called. So we also have to do a full,
+ * periodic sync.
+ */
+function civicrm_relationship_og_cron() {
+  if (!civicrm_initialize()) {
+    return FALSE;
+  }
+
+  // Get full list of mappings
+  $result = db_query("SELECT gid, relationship_id, contact_b FROM {og_civicrm_relationship}");
+
+  // Group mappings by OG
+  $groups = array();
+  foreach ($result as $row) {
+    $groups[$row->gid][] = $row;
+  }
+
+  // Get full membership of each OG
+  foreach ($groups as $gid => $group) {
+    $expected_users = array();
+
+    foreach ($group as $mapping) {
+      $values = array(
+        'relationship_type_id' => $mapping->relationship_id,
+        'is_active' => TRUE,
+        'version' => 3,
+        'options' => array(
+          'limit' => 500,
+        ),
+      );
+      // Not all mappings have a contact_b field.
+      if ($mapping->contact_b) {
+        $values['contact_id_b'] = $mapping->contact_b;
+      }
+      $relationships = civicrm_api('Relationship', 'get', $values);
+
+      if (!empty($relationships['is_error'])) {
+        continue;
+      }
+
+      foreach ($relationships['values'] as $relationship) {
+        $uid = _civicrm_relationship_og_load_user($relationship['contact_id_a'], TRUE);
+        if ($uid) {
+          $expected_users[$uid] = $uid;
+        }
+      }
+    }
+
+    // We have our list of the users we would expect in the organic group $gid.
+    // Now let's compare with actual users and synchronize the list.
+    $actual_users = og_get_group_members_properties(node_load($gid), array(), '', 'node');
+
+    // Add missing users from group
+    foreach (array_diff($expected_users, $actual_users) as $uid) {
+      og_group('node', $gid, array('entity' => $uid));
+    }
+
+    // Remove extraneous users from group
+    foreach (array_diff($actual_users, $expected_users) as $uid) {
+      og_ungroup('node', $gid, 'user', $uid);
+    }
+  }
+}
+
+/**
  * Page callbacks and form helpers
  */
 
