@@ -334,7 +334,7 @@ function _civicrm_relationship_og_populate_group($gid, $relationship_id, $contac
  * Helper functions
  */
 
-function _civicrm_relationship_og_load_user($contact_id) {
+function _civicrm_relationship_og_load_user($contact_id, $uid_only = FALSE) {
   if (!civicrm_initialize()) {
     return FALSE;
   }
@@ -357,6 +357,9 @@ function _civicrm_relationship_og_load_user($contact_id) {
     return FALSE;
   }
 
+  if ($uid_only) {
+    return $uf_match['uf_id'];
+  }
   return user_load($uf_match['uf_id']);
 }
 
