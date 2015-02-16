@@ -204,11 +204,13 @@ function civicrm_relationship_og_cron() {
 
     // Add missing users from group
     foreach (array_diff($expected_users, $actual_users) as $uid) {
+      watchdog('civicrm_relationship_og', 'Add user %uid to OG %gid during cron.', array('%uid' => $uid, '%gid' => $gid));
       og_group('node', $gid, array('entity' => $uid));
     }
 
     // Remove extraneous users from group
     foreach (array_diff($actual_users, $expected_users) as $uid) {
+      watchdog('civicrm_relationship_og', 'Remove user %uid from OG %gid during cron.', array('%uid' => $uid, '%gid' => $gid));
       og_ungroup('node', $gid, 'user', $uid);
     }
   }
@@ -425,10 +427,19 @@ function _civicrm_relationship_og_load_user($contact_id, $uid_only = FALSE) {
     return FALSE;
   }
 
+  // Load the user, whether or not $uid_only is true,
+  // so that we can determine whether the user still exists in Drupal.
+  // This is because entries in the civicrm_uf_match table might not be updated
+  // if the drupal user is deleted.
+  $user = user_load($uf_match['uf_id']);
+  if (!$user) {
+    return FALSE;
+  }
+
   if ($uid_only) {
     return $uf_match['uf_id'];
   }
-  return user_load($uf_match['uf_id']);
+  return $user;
 }
 
 function _civicrm_relationship_og_get_relationship_types() {
